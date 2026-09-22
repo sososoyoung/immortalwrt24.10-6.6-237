@@ -1,201 +1,250 @@
-#
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-# Description: Build OpenWrt using GitHub Actions
-#
-
-name: Build OpenWrt
+name: Build JCG Q30 Pro
 
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: false
-        default: 'false'
+      source:
+        description: 选择要构建的源码
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - padavan
+          - lede
+          - rebase
+  repository_dispatch:
+    types:
+      - build
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.source || github.event.client_payload.source || 'all' }}
+  cancel-in-progress: false
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
-  REPO_BRANCH: openwrt-24.10-6.6
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_COWTRANSFER: false
-  UPLOAD_WETRANSFER: false
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
-  build:
+  prepare:
+    name: Prepare build matrix
     runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      release_tag: ${{ steps.matrix.outputs.release_tag }}
+      selection: ${{ steps.matrix.outputs.selection }}
+    steps:
+      - name: Select sources
+        id: matrix
+        env:
+          SELECTED_SOURCE: ${{ github.event.inputs.source || github.event.client_payload.source || 'all' }}
+        run: |
+          set -euo pipefail
+
+          matrix=$(jq -cn --arg selected "$SELECTED_SOURCE" '
+            [
+              {
+                source_id: "padavan",
+                repo_url: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git",
+                repo_branch: "openwrt-24.10-6.6",
+                config_file: ".config"
+              },
+              {
+                source_id: "lede",
+                repo_url: "https://github.com/coolsnowwolf/lede.git",
+                repo_branch: "master",
+                config_file: "configs/lede.config"
+              },
+              {
+                source_id: "rebase",
+                repo_url: "https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git",
+                repo_branch: "25.12",
+                config_file: "configs/rebase.config"
+              }
+            ]
+            | map(select($selected == "all" or .source_id == $selected))
+            | {include: .}
+          ')
+
+          if [ "$(jq '.include | length' <<< "$matrix")" -eq 0 ]; then
+            echo "Unsupported source: $SELECTED_SOURCE" >&2
+            exit 1
+          fi
+
+          release_tag="$(date +'%Y.%m.%d-%H%M')-jcg-q30-pro-${SELECTED_SOURCE}-r${GITHUB_RUN_NUMBER}"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "selection=$SELECTED_SOURCE" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.source_id }} / jcg_q30_pro
+    needs: prepare
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@main
+      - name: Checkout builder
+        uses: actions/checkout@v4
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo -E apt -yqq purge firefox
-        sudo -E apt -yqq update
-        sudo -E apt -yqq full-upgrade
-        sudo -E apt -yqq autoremove --purge
-        sudo -E apt -yqq autoclean
-        sudo -E apt -yqq clean
-        sudo -E apt -yqq install dos2unix python3-netifaces libfuse-dev
-        sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-        sudo -E systemctl daemon-reload
-        sudo -E timedatectl set-timezone "Asia/Shanghai"
+      - name: Initialize build environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y dos2unix jq python3-netifaces libfuse-dev
+          curl -fsSL https://build-scripts.immortalwrt.org/init_build_environment.sh | sudo bash
+          sudo timedatectl set-timezone "$TZ"
 
-        sudo mkdir -p /mnt/workdir
-        sudo chown $USER:$USER /mnt/workdir
+      - name: Clone ${{ matrix.source_id }} source
+        run: |
+          set -euo pipefail
+          git clone \
+            --depth=1 \
+            --single-branch \
+            --branch "${{ matrix.repo_branch }}" \
+            "${{ matrix.repo_url }}" \
+            openwrt
+          git -C openwrt rev-parse HEAD
 
-    - name: Clone source code
-      working-directory: /mnt/workdir
-      run: |
-        df -hT $PWD
-        git clone --depth=1 --single-branch --branch $REPO_BRANCH $REPO_URL openwrt
-        ln -sf /mnt/workdir/openwrt $GITHUB_WORKSPACE/openwrt
+      - name: Prepare feeds
+        env:
+          SOURCE_ID: ${{ matrix.source_id }}
+        run: |
+          set -euo pipefail
+          cd openwrt
 
-    - name: Load custom feeds
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        # GitHub Action 移除国内下载源
-        PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
-        if [ -f "$PROJECT_MIRRORS_FILE" ]; then
-          sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
-        fi
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+          project_mirrors_file="scripts/projectsmirrors.json"
+          if [ -f "$project_mirrors_file" ]; then
+            sed -i '/\.cn\//d; /tencent/d; /aliyun/d' "$project_mirrors_file"
+          fi
 
-    - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
+          "$GITHUB_WORKSPACE/diy-part1.sh"
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          "$GITHUB_WORKSPACE/diy-part2.sh"
 
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      - name: Load and verify configuration
+        env:
+          SOURCE_ID: ${{ matrix.source_id }}
+          CONFIG_FILE: ${{ matrix.config_file }}
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
+          cd openwrt
+          make defconfig
+          "$GITHUB_WORKSPACE/scripts/verify-config.sh" "$SOURCE_ID" .config
+          ./scripts/diffconfig.sh > "$GITHUB_WORKSPACE/${SOURCE_ID}-diffconfig.txt"
 
-    - name: Load custom configuration
-      run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+      - name: Download packages
+        run: |
+          set -euo pipefail
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -print -delete
 
-    - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@v1.0.0
-      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
-      env:
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - name: Compile firmware
+        run: |
+          set -o pipefail
+          cd openwrt
+          make -j"$(nproc)" || make -j1 V=s
 
-    - name: Download package
-      id: package
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
+      - name: Stage ${{ matrix.source_id }} release files
+        env:
+          SOURCE_ID: ${{ matrix.source_id }}
+          REPO_URL: ${{ matrix.repo_url }}
+          REPO_BRANCH: ${{ matrix.repo_branch }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
 
-    - name: Compile the firmware
-      id: compile
-      run: |
-        cd openwrt
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+          target_dirs=(openwrt/bin/targets/*/*)
+          if [ "${#target_dirs[@]}" -ne 1 ] || [ ! -d "${target_dirs[0]}" ]; then
+            echo "Expected exactly one target output directory, found ${#target_dirs[@]}" >&2
+            exit 1
+          fi
 
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
+          mkdir -p staged
+          copied=0
+          for file in "${target_dirs[0]}"/*; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.bin|*.itb|*.img|*.ubi|*.gz|*.json|*.manifest|*.buildinfo)
+                cp "$file" "staged/${SOURCE_ID}-$(basename "$file")"
+                copied=$((copied + 1))
+                ;;
+            esac
+          done
 
-    - name: Upload bin directory
-      uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
+          if [ "$copied" -eq 0 ]; then
+            echo "No firmware files were produced" >&2
+            exit 1
+          fi
 
-    # 整理编译好的固件
-    - name: Organize files
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        rm -rf *.buildinfo
-        rm -rf *.manifest
-        rm -rf *.json
-        rm -rf *bl2.bin
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+          commit=$(git -C openwrt rev-parse HEAD)
+          {
+            echo "source=$SOURCE_ID"
+            echo "repository=$REPO_URL"
+            echo "branch=$REPO_BRANCH"
+            echo "commit=$commit"
+            echo "device=jcg_q30-pro"
+          } > "staged/${SOURCE_ID}-source-info.txt"
+          cp "${SOURCE_ID}-diffconfig.txt" "staged/${SOURCE_ID}-diffconfig.txt"
+          (cd staged && sha256sum * > "${SOURCE_ID}-SHA256SUMS")
 
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
+      - name: Upload ${{ matrix.source_id }} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcg-q30-pro-${{ matrix.source_id }}
+          path: staged/*
+          if-no-files-found: error
+          retention-days: 7
 
-    - name: Upload firmware to cowtransfer
-      id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
+      - name: Show disk usage
+        if: ${{ !cancelled() }}
+        run: df -hT
 
-    - name: Upload firmware to WeTransfer
-      id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
+  release:
+    name: Publish release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jcg-q30-pro-*
+          path: release
+          merge-multiple: true
 
-    - name: Generate release tag
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M-immortalwrt24.10-6.6-cmcc_rax3000m-237")" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "cmcc_rax3000m-237大功率固件" >> release.txt
-        echo "后台：192.168.6.1" >> release.txt
-        echo "账号：root" >> release.txt
-        echo "密码：无" >> release.txt
-        echo "默认主题：Argon" >> release.txt
-        echo "集成插件：aria2 openlist2 diskman lucky ksmb hd-idle autoreboot mtwifi-cfg " >> release.txt
-        echo "编译源码：https://github.com/padavanonly/immortalwrt-mt798x-6.6" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
+      - name: Generate release notes
+        env:
+          SELECTION: ${{ needs.prepare.outputs.selection }}
+        run: |
+          cat > release.txt <<EOF
+          JCG Q30 Pro 固件
 
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@v1
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+          本次构建选择：${SELECTION}
 
-    - name: Delete workflow runs
-      uses: GitRML/delete-workflow-runs@main
-      with:
-        retain_days: 1
-        keep_minimum_runs: 3
+          固件文件均以源码标识开头：
+          - padavan：padavanonly/immortalwrt-mt798x-6.6（openwrt-24.10-6.6）
+          - lede：coolsnowwolf/lede（master）
+          - rebase：chasey-dev/immortalwrt-mt798x-rebase（25.12）
+
+          每组固件附带 source-info、diffconfig 和 SHA256SUMS。核心 LuCI 能力：
+          mwan3、ddns、wireguard、acme、wol、msd_lite、upnp、turboacc。
+          EOF
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: JCG Q30 Pro - ${{ needs.prepare.outputs.selection }} - ${{ needs.prepare.outputs.release_tag }}
+          body_path: release.txt
+          files: release/*
+          fail_on_unmatched_files: true

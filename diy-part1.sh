@@ -10,11 +10,8 @@
 # Description: OpenWrt DIY script part 1 (Before Update feeds)
 #
 
-# Uncomment a feed source
-#sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
+set -euo pipefail
 
-# Add a feed source
-#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
-git clone https://github.com/gdy666/luci-app-lucky.git package/lucky
-git clone https://github.com/sbwml/luci-app-openlist2 package/openlist
+# 当前配置没有启用 luci-app-lucky 或 luci-app-openlist2，因此不再下载未使用的
+# 第三方源码。三个上游均直接使用各自 feeds.conf.default，以减少交叉版本问题。
+echo "Using default feeds for ${SOURCE_ID:-unknown}"
