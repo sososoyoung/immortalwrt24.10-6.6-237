@@ -37,10 +37,10 @@
 
 ## 当前 padavan 配置与兼容处理
 
-根目录 [`.config`](./.config) 继续作为 padavan 构建配置，以保留现有完整功能。当前启用的 `luci-app-*` 为：
+[`configs/padavan.config`](./configs/padavan.config) 作为 padavan 构建配置，以保留现有完整功能。当前启用的 `luci-app-*` 为：
 
 - 核心：`acme`、`ddns`、`msd_lite`、`pbr`、`turboacc-mtk`、`upnp`、`wol`
-- 通用/管理：`firewall`、`package-manager`、`ttyd`
+- 通用/管理：`firewall`、`package-manager`
 - MTK/当前源码特有：`eqos-mtk`、`mtwifi-cfg`、`wrtbwmon`
 - WireGuard 界面：`luci-proto-wireguard`
 
@@ -50,7 +50,8 @@
 | --- | :---: | :---: | --- |
 | `luci-app-firewall` | 有 | 有 | 两边显式开启 |
 | `luci-app-package-manager` | 有 | 有 | 两边显式开启 |
-| `luci-app-ttyd` | 有 | 有 | 两边显式开启 |
+| `luci-app-ttyd` | 有 | 有 | 三边显式禁用（网页终端不进固件） |
+| `luci-app-passwall` | — | — | 三边显式禁用（代理界面不进固件） |
 | `luci-app-eqos-mtk` | 无 | 有 | 仅 rebase 开启 |
 | `luci-app-mtwifi-cfg` | 无 | 有 | 仅 rebase 开启 |
 | `luci-app-wrtbwmon` | 无 | 无 | 仅 padavan 保留 |
@@ -78,9 +79,9 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [`.config`](./.config) | padavan 当前完整配置 |
+| [`configs/padavan.config`](./configs/padavan.config) | padavan 完整功能配置（diffconfig 风格） |
 | [`configs/lede.config`](./configs/lede.config) | LEDE 最小配置片段 |
 | [`configs/rebase.config`](./configs/rebase.config) | rebase 最小配置片段 |
 | [`scripts/verify-config.sh`](./scripts/verify-config.sh) | `defconfig` 后的设备与核心插件校验 |
 
-LEDE 和 rebase 使用最小配置片段，由各自源码的 `make defconfig` 补齐默认值和依赖。这样不会把某个上游的内核、驱动或私有包配置错误地复制到另一个上游。
+三份配置均为最小种子片段，由各自源码的 `make defconfig` 补齐默认值和依赖。这样不会把某个上游的内核、驱动或私有包配置错误地复制到另一个上游。

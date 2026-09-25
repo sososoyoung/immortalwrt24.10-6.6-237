@@ -49,7 +49,7 @@ jobs:
                 source_id: "padavan",
                 repo_url: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git",
                 repo_branch: "openwrt-24.10-6.6",
-                config_file: ".config"
+                config_file: "configs/padavan.config"
               },
               {
                 source_id: "lede",
