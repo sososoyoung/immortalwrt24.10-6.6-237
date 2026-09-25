@@ -237,7 +237,7 @@ jobs:
           - rebase：chasey-dev/immortalwrt-mt798x-rebase（25.12）
 
           每组固件附带 source-info、diffconfig 和 SHA256SUMS。核心 LuCI 能力：
-          mwan3、ddns、wireguard、acme、wol、msd_lite、upnp、turboacc。
+          pbr、ddns、wireguard、acme、wol、msd_lite、upnp、turboacc。
           EOF
 
       - name: Publish GitHub release

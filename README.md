@@ -20,7 +20,7 @@
 
 | 功能 | 配置包 | padavan 默认 | LEDE 默认 | rebase 默认 |
 | --- | --- | :---: | :---: | :---: |
-| 多线负载 | `luci-app-mwan3` | 否 | 否 | 否 |
+| 策略路由 | `luci-app-pbr` | 否 | 否 | 否 |
 | 动态 DNS | `luci-app-ddns` | 否 | 是 | 否 |
 | WireGuard | `luci-proto-wireguard` | 否 | 否 | 否 |
 | ACME 证书 | `luci-app-acme` | 否 | 否 | 否 |
@@ -28,6 +28,8 @@
 | 组播转发 | `luci-app-msd_lite` | 否 | 否 | 否 |
 | UPnP | `luci-app-upnp` | 否 | 是 | 否 |
 | TurboACC | 源码相关，见上表 | 否 | 是 | 否 |
+
+三个构建均显式启用 `pbr`、`luci-app-pbr` 和 `luci-i18n-pbr-zh-cn`，关闭 mwan3 及其辅助插件。构建校验会拒绝残留的 mwan3 包选择，包括模块形式。这里仅预装 PBR 软件包，具体线路、Nikki 兼容和分流规则由路由器配置管理，不在固件中自动写入或启用。PBR 选包变更仍需在各上游的 `make defconfig` 后确认依赖和包可用性。
 
 > LuCI 当前没有 `luci-app-wireguard`。WireGuard 的 Web 配置入口由 `luci-proto-wireguard` 提供，它会带入相应的 WireGuard 依赖。
 
@@ -37,9 +39,9 @@
 
 根目录 [`.config`](./.config) 继续作为 padavan 构建配置，以保留现有完整功能。当前启用的 `luci-app-*` 为：
 
-- 核心：`acme`、`ddns`、`msd_lite`、`mwan3`、`turboacc-mtk`、`upnp`、`wol`
+- 核心：`acme`、`ddns`、`msd_lite`、`pbr`、`turboacc-mtk`、`upnp`、`wol`
 - 通用/管理：`firewall`、`package-manager`、`ttyd`
-- MTK/当前源码特有：`eqos-mtk`、`mtwifi-cfg`、`mwan3helper-chinaroute`、`wrtbwmon`
+- MTK/当前源码特有：`eqos-mtk`、`mtwifi-cfg`、`wrtbwmon`
 - WireGuard 界面：`luci-proto-wireguard`
 
 另外两个源码遵循“核心能力必须一致，额外插件只在兼容时保留”的规则：
@@ -51,7 +53,6 @@
 | `luci-app-ttyd` | 有 | 有 | 两边显式开启 |
 | `luci-app-eqos-mtk` | 无 | 有 | 仅 rebase 开启 |
 | `luci-app-mtwifi-cfg` | 无 | 有 | 仅 rebase 开启 |
-| `luci-app-mwan3helper-chinaroute` | 无 | 无 | 仅 padavan 保留 |
 | `luci-app-wrtbwmon` | 无 | 无 | 仅 padavan 保留 |
 
 与最早一次完整配置相比，当前已经关闭 `luci-app-argon-config`、`aria2`、`ddns-go`、`diskman`、`docker`、`dockerman`、`filetransfer`、`ksmbd`、`opkg`、`uhttpd` 和 `usb-printer` 等应用。旧脚本虽然还会下载 Lucky/OpenList2，但当前配置并未启用它们；现已移除这两个无效下载，避免增加网络失败点。Argon 主题本身仍保留。

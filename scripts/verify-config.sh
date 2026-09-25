@@ -6,7 +6,9 @@ source_id=${1:?source id is required}
 config_file=${2:-.config}
 
 required_packages=(
-  luci-app-mwan3
+  pbr
+  luci-app-pbr
+  luci-i18n-pbr-zh-cn
   luci-app-ddns
   luci-proto-wireguard
   luci-app-acme
@@ -49,4 +51,11 @@ if [ "${#missing[@]}" -ne 0 ]; then
   exit 1
 fi
 
-printf 'Verified %s: jcg_q30-pro and all required LuCI packages are enabled.\n' "$source_id"
+legacy_packages=$(grep -E '^CONFIG_PACKAGE_.*mwan3.*=[ym]$' "$config_file" || true)
+if [ -n "$legacy_packages" ]; then
+  printf 'mwan3 packages must be disabled when building with PBR:\n%s\n' \
+    "$legacy_packages" >&2
+  exit 1
+fi
+
+printf 'Verified %s: jcg_q30-pro, PBR and required LuCI packages are enabled; mwan3 is disabled.\n' "$source_id"
