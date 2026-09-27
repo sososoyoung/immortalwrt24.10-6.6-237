@@ -28,8 +28,11 @@
 | 组播转发 | `luci-app-msd_lite` | 否 | 否 | 否 |
 | UPnP | `luci-app-upnp` | 否 | 是 | 否 |
 | TurboACC | 源码相关，见上表 | 否 | 是 | 否 |
+| 代理（mihomo） | `luci-app-nikki` | 否 | 否 | 否 |
 
-三个构建均显式启用 `pbr`、`luci-app-pbr` 和 `luci-i18n-pbr-zh-cn`，关闭 mwan3 及其辅助插件。构建校验会拒绝残留的 mwan3 包选择，包括模块形式。这里仅预装 PBR 软件包，具体线路、Nikki 兼容和分流规则由路由器配置管理，不在固件中自动写入或启用。PBR 选包变更仍需在各上游的 `make defconfig` 后确认依赖和包可用性。
+三个构建均显式启用 `pbr`、`luci-app-pbr` 和 `luci-i18n-pbr-zh-cn`，关闭 mwan3 及其辅助插件。构建校验会拒绝残留的 mwan3 包选择，包括模块形式。PBR 与 Nikki 均只预装软件包，具体线路、分流规则和订阅配置由路由器配置管理，不在固件中自动写入或启用。PBR 选包变更仍需在各上游的 `make defconfig` 后确认依赖和包可用性。
+
+代理通过 [nikkinikki-org/OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki) 提供（`nikki` 服务包 + `luci-app-nikki` 界面 + `luci-i18n-nikki-zh-cn` 中文翻译，自带 `PROVIDES:=mihomo` 的本地编译内核包）。`diy-part1.sh` 按官方推荐方式向三个源统一追加 `src-git nikki` feed；nikki 要求 OpenWrt >= 24.10 且使用 firewall4，三个源均满足。
 
 > LuCI 当前没有 `luci-app-wireguard`。WireGuard 的 Web 配置入口由 `luci-proto-wireguard` 提供，它会带入相应的 WireGuard 依赖。
 
@@ -39,7 +42,7 @@
 
 padavan 在 `feeds install` 后执行 `cp -f defconfig/mt7981-ax3000.config .config`，以该上游默认配置为基础。随后清除默认配置中的 `CONFIG_TARGET_*` 多设备选择，通过 `scripts/kconfig.pl +` 合并 [`configs/padavan.config`](./configs/padavan.config)，由项目配置指定 JCG Q30 Pro，并优先采用项目中的同名选项（包括显式禁用项），最后执行 `make defconfig` 和校验。项目配置显式启用的 `luci-app-*` 为：
 
-- 核心：`acme`、`ddns`、`msd_lite`、`pbr`、`turboacc-mtk`、`upnp`、`wol`
+- 核心：`acme`、`ddns`、`msd_lite`、`nikki`、`pbr`、`turboacc-mtk`、`upnp`、`wol`
 - 通用/管理：`firewall`、`package-manager`
 - MTK/当前源码特有：`eqos-mtk`、`mtwifi-cfg`、`wrtbwmon`
 - WireGuard 界面：`luci-proto-wireguard`
@@ -51,7 +54,7 @@ padavan 在 `feeds install` 后执行 `cp -f defconfig/mt7981-ax3000.config .con
 | `luci-app-firewall` | 有 | 有 | 两边显式开启 |
 | `luci-app-package-manager` | 有 | 有 | 两边显式开启 |
 | `luci-app-ttyd` | 有 | 有 | 三边显式禁用（网页终端不进固件） |
-| `luci-app-passwall` | — | — | 三边显式禁用（代理界面不进固件） |
+| `luci-app-passwall` | — | — | 三边显式禁用（代理界面统一由 nikki 提供） |
 | `luci-app-eqos-mtk` | 无 | 有 | 仅 rebase 开启 |
 | `luci-app-mtwifi-cfg` | 无 | 有 | 仅 rebase 开启 |
 | `luci-app-wrtbwmon` | 无 | 无 | 仅 padavan 保留 |

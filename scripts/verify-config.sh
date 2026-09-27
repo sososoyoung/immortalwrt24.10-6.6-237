@@ -15,6 +15,9 @@ required_packages=(
   luci-app-wol
   luci-app-msd_lite
   luci-app-upnp
+  nikki
+  luci-app-nikki
+  luci-i18n-nikki-zh-cn
 )
 
 case "$source_id" in
