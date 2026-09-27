@@ -37,7 +37,7 @@
 
 ## 当前 padavan 配置与兼容处理
 
-[`configs/padavan.config`](./configs/padavan.config) 作为 padavan 构建配置，以保留现有完整功能。当前启用的 `luci-app-*` 为：
+padavan 在 `feeds install` 后执行 `cp -f defconfig/mt7981-ax3000.config .config`，以该上游默认配置为基础。随后清除默认配置中的 `CONFIG_TARGET_*` 多设备选择，通过 `scripts/kconfig.pl +` 合并 [`configs/padavan.config`](./configs/padavan.config)，由项目配置指定 JCG Q30 Pro，并优先采用项目中的同名选项（包括显式禁用项），最后执行 `make defconfig` 和校验。项目配置显式启用的 `luci-app-*` 为：
 
 - 核心：`acme`、`ddns`、`msd_lite`、`pbr`、`turboacc-mtk`、`upnp`、`wol`
 - 通用/管理：`firewall`、`package-manager`
@@ -79,9 +79,9 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [`configs/padavan.config`](./configs/padavan.config) | padavan 完整功能配置（diffconfig 风格） |
+| [`configs/padavan.config`](./configs/padavan.config) | padavan 默认配置的项目覆盖片段（diffconfig 风格） |
 | [`configs/lede.config`](./configs/lede.config) | LEDE 最小配置片段 |
 | [`configs/rebase.config`](./configs/rebase.config) | rebase 最小配置片段 |
 | [`scripts/verify-config.sh`](./scripts/verify-config.sh) | `defconfig` 后的设备与核心插件校验 |
 
-三份配置均为最小种子片段，由各自源码的 `make defconfig` 补齐默认值和依赖。这样不会把某个上游的内核、驱动或私有包配置错误地复制到另一个上游。
+padavan 将项目片段合并到自身上游默认配置；LEDE 和 rebase 直接使用各自的最小种子片段，再由各自源码的 `make defconfig` 补齐默认值和依赖。这样不会把某个上游的内核、驱动或私有包配置错误地复制到另一个上游。

@@ -126,6 +126,9 @@ jobs:
           "$GITHUB_WORKSPACE/diy-part1.sh"
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          if [ "$SOURCE_ID" = "padavan" ]; then
+            cp -f defconfig/mt7981-ax3000.config .config
+          fi
           "$GITHUB_WORKSPACE/diy-part2.sh"
 
       - name: Load and verify configuration
@@ -134,8 +137,15 @@ jobs:
           CONFIG_FILE: ${{ matrix.config_file }}
         run: |
           set -euo pipefail
-          cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
           cd openwrt
+          if [ "$SOURCE_ID" = "padavan" ]; then
+            # 上游默认配置面向多个设备，目标选择由项目配置统一指定。
+            sed -i '/^CONFIG_TARGET_/d; /^# CONFIG_TARGET_/d' .config
+            ./scripts/kconfig.pl + .config "$GITHUB_WORKSPACE/$CONFIG_FILE" > .config.merged
+            mv .config.merged .config
+          else
+            cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
+          fi
           make defconfig
           "$GITHUB_WORKSPACE/scripts/verify-config.sh" "$SOURCE_ID" .config
           ./scripts/diffconfig.sh > "$GITHUB_WORKSPACE/${SOURCE_ID}-diffconfig.txt"
